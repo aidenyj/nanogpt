@@ -7,7 +7,7 @@ device = "mps"
 batch_size = 64
 block_size = 256 # T
 n_embed = 384
-p_dropout = 0.2
+p = 0.2
 
 f = open("input.txt", "r").read()
 
@@ -38,9 +38,9 @@ class Head(nn.Module):
         self.key = nn.Linear(n_embed, head_size)
         self.query = nn.Linear(n_embed, head_size)
         self.value = nn.Linear(n_embed, head_size)
-        self.dropout = nn.Dropout(p_dropout)
+        self.dropout = nn.Dropout(p)
 
-    def forward(self, x):
+    def forward(self, x): # B, T, n_embed
         k = self.key(x) # B, T, hs
         q = self.query(x)
         v = self.value(x)
@@ -55,3 +55,17 @@ class Head(nn.Module):
 
         return att @ v # B, T, hs
     
+class MultiHead(nn.Module):
+    def __init__(self, num_heads, head_size):
+        super().__init__()
+        self.w = nn.Linear(num_heads*head_size, n_embed)
+        self.heads = nn.ModuleList([Head(head_size) for _ in range(num_heads)])
+        self.dropout = nn.Dropout(p)
+    
+    def forward(self, x):
+        after_heads = torch.concat([H(x) for H in self.heads], dim = -1) # B, T, hx*nh
+        
+        resize = self.w(after_heads) # B, T, n_embed
+        resize = self.dropout(resize)
+
+        return resize
