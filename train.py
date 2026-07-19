@@ -1,11 +1,13 @@
 import torch
+import torch.nn as nn
 import math
-import random
 
 device = "mps"
 
 batch_size = 64
-block_size = 256
+block_size = 256 # T
+n_embed = 384
+p_dropout = 0.2
 
 f = open("input.txt", "r").read()
 
@@ -25,7 +27,31 @@ def get_batch(where):
     x = torch.empty(batch_size,block_size)
     y = torch.empty(batch_size,block_size)
     for k in range(batch_size):
-        i = random.randint(0,len(where)-block_size-1)
+        i = torch.randint(0,len(where)-block_size)
         x[k]=where[i:i+block_size]
         y[k]=where[i+1:i+block_size+1]
     return x.to(device), y.to(device)
+
+class Head(nn.Module):
+    def __init__(self, head_size): # d_k 
+        super().__init__()
+        self.key = nn.Linear(n_embed, head_size)
+        self.query = nn.Linear(n_embed, head_size)
+        self.value = nn.Linear(n_embed, head_size)
+        self.dropout = nn.Dropout(p_dropout)
+
+    def forward(self, x):
+        k = self.key(x) # B, T, hs
+        q = self.query(x)
+        v = self.value(x)
+
+        att = q @ torch.transpose(k, 1, 2)/math.sqrt(k.size(-1)) # B, T, T
+
+        mask = -float('inf')*torch.ones(k.size(-2),k.size(-2), device = device)
+        mask = torch.tril(mask,diagonal=-1).transpose(-1,-2)
+
+        att = torch.softmax(att + mask, dim = -1)
+        att = self.dropout(att)
+
+        return att @ v # B, T, hs
+    
