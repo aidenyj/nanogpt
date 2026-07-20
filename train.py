@@ -8,6 +8,7 @@ batch_size = 64
 block_size = 256 # T
 n_embed = 384
 p = 0.2
+num_heads = 6
 
 f = open("input.txt", "r").read()
 
@@ -69,3 +70,29 @@ class MultiHead(nn.Module):
         resize = self.dropout(resize)
 
         return resize
+    
+class FeedForward(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.ff = nn.Sequential(
+            nn.Linear(n_embed, 4*n_embed),
+            nn.ReLU(),
+            nn.Linear(4*n_embed, n_embed),
+            nn.Dropout(p)
+        )
+    def forward(self, x):
+        return self.ff(x)
+
+class Block(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.mha = MultiHead(num_heads=num_heads, head_size = n_embed // num_heads)
+        self.ff = FeedForward()
+        self.ln1 = nn.LayerNorm(n_embed)
+        self.ln2 = nn.LayerNorm(n_embed)
+
+    def forward(self, x):
+        x = x + self.mha(self.ln1(x))
+        x = x + self.ff(self.l2n(x))
+        return x
+
