@@ -9,10 +9,12 @@ block_size = 256 # T
 n_embed = 384
 p = 0.2
 num_heads = 6
+num_layers = 6
 
 f = open("input.txt", "r").read()
 
 chars = sorted(list(set(f)))
+vocab_size = len(chars)
 
 chartonum = {c : i for i,c in enumerate(chars)}
 numtochar = {i : c for i,c in enumerate(chars)}
@@ -94,5 +96,21 @@ class Block(nn.Module):
     def forward(self, x):
         x = x + self.mha(self.ln1(x))
         x = x + self.ff(self.ln2(x))
+        return x
+
+class GPT(nn.Module):
+    def __init__(self):
+        super().__init__()
+        self.blocks = nn.ModuleList([Block() for _ in range(num_layers)])
+        self.ln = nn.LayerNorm(n_embed)
+        self.resize = nn.Linear(n_embed, vocab_size)
+        self.sm = nn.Softmax(dim = -1)
+
+    def inference(self, x):
+        for B in self.blocks:
+            x = B.forward(x)
+        x = self.ln(x)
+        x = self.resize(x)
+        x = self.sm(x)
         return x
 
