@@ -48,7 +48,7 @@ class Head(nn.Module):
         q = self.query(x)
         v = self.value(x)
 
-        att = q @ torch.transpose(k, 1, 2)/math.sqrt(k.size(-1)) # B, T, T
+        att = q @ torch.transpose(k, -1, -2)/math.sqrt(k.size(-1)) # B, T, T
 
         mask = -float('inf')*torch.ones(k.size(-2),k.size(-2), device = device)
         mask = torch.tril(mask,diagonal=-1).transpose(-1,-2)
@@ -98,15 +98,21 @@ class Block(nn.Module):
         x = x + self.ff(self.ln2(x))
         return x
 
-class GPT(nn.Module):
+class Model(nn.Module):
     def __init__(self):
         super().__init__()
         self.blocks = nn.ModuleList([Block() for _ in range(num_layers)])
         self.ln = nn.LayerNorm(n_embed)
         self.resize = nn.Linear(n_embed, vocab_size)
         self.sm = nn.Softmax(dim = -1)
+        
+        self.positional_embedding = nn.Embedding(num_embeddings=block_size, embedding_dim=n_embed)
+        self.embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=n_embed)
 
-    def inference(self, x):
+    def inference(self, x): # x has size B, T or just T
+        pos = torch.arange(block_size, device = device)
+        x = self.embedding(x) + self.positional_embedding(pos)
+
         for B in self.blocks:
             x = B.forward(x)
         x = self.ln(x)
@@ -114,3 +120,15 @@ class GPT(nn.Module):
         x = self.sm(x)
         return x
 
+    def generate(self, input, count): # input is K tensor where K >> block_size
+        final = ""
+        for _ in range(count):
+            probs = self.inference(input[-block_size:])
+            next = torch.argmax(probs[block_size-1])
+            next = torch.tensor([next]).to(device)
+            input = torch.cat((input, next))
+            final += numtochar[next.item()]
+        return final
+
+model = Model().to(device)
+print(model.generate(val.to(device),100))
