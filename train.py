@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import math
+import random
 
 device = "mps"
 
@@ -10,6 +11,9 @@ n_embed = 384
 p = 0.2
 num_heads = 6
 num_layers = 6
+
+lr = 3e-4
+max_iters = 500
 
 f = open("input.txt", "r").read()
 
@@ -27,10 +31,10 @@ train = data[:math.floor(len(data)*0.9)]
 val = data[math.floor(len(data)*0.9):]
 
 def get_batch(where):
-    x = torch.empty(batch_size,block_size)
-    y = torch.empty(batch_size,block_size)
+    x = torch.empty(batch_size,block_size, dtype = torch.long)
+    y = torch.empty(batch_size,block_size, dtype = torch.long)
     for k in range(batch_size):
-        i = torch.randint(0,len(where)-block_size)
+        i = random.randint(0,len(where)-block_size-2) # 2?
         x[k]=where[i:i+block_size]
         y[k]=where[i+1:i+block_size+1]
     return x.to(device), y.to(device)
@@ -104,7 +108,6 @@ class Model(nn.Module):
         self.blocks = nn.ModuleList([Block() for _ in range(num_layers)])
         self.ln = nn.LayerNorm(n_embed)
         self.resize = nn.Linear(n_embed, vocab_size)
-        self.sm = nn.Softmax(dim = -1)
         
         self.positional_embedding = nn.Embedding(num_embeddings=block_size, embedding_dim=n_embed)
         self.embedding = nn.Embedding(num_embeddings=vocab_size, embedding_dim=n_embed)
@@ -117,13 +120,12 @@ class Model(nn.Module):
             x = B.forward(x)
         x = self.ln(x)
         x = self.resize(x)
-        x = self.sm(x)
         return x
 
     def generate(self, input, count): # input is K tensor where K >> block_size
         final = ""
         for _ in range(count):
-            probs = self.inference(input[-block_size:])
+            probs = torch.softmax(self.inference(input[-block_size:]), dim = -1)
             next = torch.argmax(probs[block_size-1])
             next = torch.tensor([next]).to(device)
             input = torch.cat((input, next))
@@ -131,4 +133,22 @@ class Model(nn.Module):
         return final
 
 model = Model().to(device)
+
+optimizer = torch.optim.AdamW(model.parameters(), lr = lr)
+loss_fn = nn.CrossEntropyLoss()
+
+for iter in range(max_iters):
+    x,y = get_batch(train)
+    z = model.inference(x)
+
+    y = torch.reshape(y, (-1,))
+    z = torch.reshape(z, (-1,vocab_size))
+    loss = loss_fn(z,y)
+    loss.backward()
+    optimizer.step()
+    optimizer.zero_grad()
+
+    print(iter, loss.item())
+
+
 print(model.generate(val.to(device),100))
