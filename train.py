@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import math
 import random
+import time
 
 device = "mps"
 
@@ -13,9 +14,9 @@ num_heads = 6
 num_layers = 6
 
 lr = 3e-4
-max_iters = 500
+max_iters = 3000
 
-f = open("input.txt", "r").read()
+f = open("prideprejudice.txt", "r").read()
 
 chars = sorted(list(set(f)))
 vocab_size = len(chars)
@@ -134,21 +135,47 @@ class Model(nn.Module):
 
 model = Model().to(device)
 
-optimizer = torch.optim.AdamW(model.parameters(), lr = lr)
-loss_fn = nn.CrossEntropyLoss()
+if __name__ == "__main__":
+    optimizer = torch.optim.AdamW(model.parameters(), lr = lr)
+    loss_fn = nn.CrossEntropyLoss()
 
-for iter in range(max_iters):
-    x,y = get_batch(train)
-    z = model.inference(x)
+    start = time.time()
 
-    y = torch.reshape(y, (-1,))
-    z = torch.reshape(z, (-1,vocab_size))
-    loss = loss_fn(z,y)
-    loss.backward()
-    optimizer.step()
-    optimizer.zero_grad()
+    interval = 50
 
-    print(iter, loss.item())
+    total_loss = 0
+
+    for iter in range(max_iters):
+        x,y = get_batch(train)
+        z = model.inference(x)
+
+        y = torch.reshape(y, (-1,))
+        z = torch.reshape(z, (-1,vocab_size))
+        loss = loss_fn(z,y)
+        loss.backward()
+        optimizer.step()
+        optimizer.zero_grad()
+
+        total_loss += loss.item()
+
+        if iter % interval == 0:
+            t = time.time()
+
+            if iter > 0:
+                est_time = (max_iters/iter*(t-start) - (t-start))/60
+                print("iter:",iter, "loss:",total_loss/interval, "est. remaining time:",est_time,"mins")
+
+            total_loss = 0
 
 
-print(model.generate(val.to(device),100))
+    end = time.time()
+
+    print("training time:",(end - start)/60,"minutes")
+
+    torch.save({
+        'model': model.state_dict(),
+        'optimizer': optimizer.state_dict(),
+        'iter': iter,
+    }, 'ckpt.pt')
+
+    print(model.generate(val.to(device),100))
